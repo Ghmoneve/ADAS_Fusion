@@ -1,0 +1,22 @@
+# PDF files (product manuals / protocol docs)
+ds/*.pdf
+
+# ROS build artifacts
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Compiled
+*.blob
