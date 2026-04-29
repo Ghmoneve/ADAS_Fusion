@@ -1,5 +1,6 @@
 # PDF files (product manuals / protocol docs)
 ds/*.pdf
+userguide/
 
 # ROS build artifacts
 build/
