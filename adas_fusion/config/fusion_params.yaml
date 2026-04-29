@@ -1,0 +1,70 @@
+/**:
+  ros__parameters:
+    # ---- 融合节点参数 ----
+
+    # 传感器 frame ID（用于 TF 空间对齐）
+    camera_frame: "oak_rgb_camera_optical_frame"
+    laser_frame: "laser"
+    radar_frame: "radar_link"
+    target_frame: "base_link"
+
+    # 时间同步窗口 (秒)
+    time_window: 0.1
+
+    # ---- 数据关联 ----
+    # 欧氏距离门限 (米)，超过此距离的观测不会被关联
+    association_gate: 3.0
+    # 马氏距离阈值 (卡方分布, 自由度=2, 95% 置信度 = 5.991)
+    mahalanobis_threshold: 5.991
+
+    # ---- 目标管理 ----
+    # 连续关联帧数确认新目标
+    confirm_threshold: 3
+    # 连续丢失帧数删除目标
+    delete_threshold: 5
+    # 最大跟踪目标数
+    max_tracks: 20
+
+    # ---- Kalman Filter ----
+    # 时间步长 (秒)
+    dt: 0.1
+    # 过程噪声系数 (加速度方差)
+    process_noise_q: 0.5
+    # 初始测量噪声协方差
+    measurement_noise_r: 0.1
+
+    # ---- 传感器初始权重 (自适应融合) ----
+    camera_weight: 0.35
+    lidar_weight: 0.35
+    radar_weight: 0.30
+
+    # ---- 决策节点参数 ----
+    # TTC 阈值 (秒)
+    ttc_warning: 5.0
+    ttc_slowdown: 3.0
+    ttc_emergency: 1.0
+
+    # 速度限制 (m/s, rad/s)
+    max_linear_vel: 0.3
+    slowdown_factor: 0.5
+    max_angular_vel: 0.5
+
+    # ---- 传感器 Topic 重映射 (可在 launch 中覆盖) ----
+    detection_topic: "/detections"
+    scan_topic: "/scan"
+    radar_topic: "/radar/targets"
+    tracked_objects_topic: "/tracked_objects"
+    cmd_vel_topic: "/cmd_vel"
+
+    # ---- 深度传感器 Topic (source) ----
+    # depthai-ros 发布 SpatialDetectionArray 的默认 topic
+    # 实际路径取决于 camera_name, 通常为 /oak/color/yolov4_Spatial_detections
+    depthai_detection_topic: "/oak/color/yolov4_Spatial_detections"
+    depthai_depth_topic: "/stereo/depth"
+
+    # ---- 串口桥接 (Jetson → STM32) ----
+    # Jetson ORIN NX USART3 对应 /dev/ttyTHS2
+    serial_port: "/dev/ttyTHS2"
+    serial_baud: 115200
+    wheel_base: 0.2
+    ticks_per_meter: 2000

@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>adas_fusion</name>
+  <version>1.0.0</version>
+  <description>ADAS multi-sensor fusion: detection/radar adapters, fusion node, TTC decision node, and STM32 serial bridge for Jetson ORIN NX</description>
+  <maintainer email="moneve@github.com">Moneve</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>vision_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>adas_fusion_msgs</depend>
+  <depend>depthai_ros_msgs</depend>
+  <depend>mmw_radar_msgs</depend>
+
+  <!-- Python 系统依赖 -->
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
