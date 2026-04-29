@@ -1,0 +1,29 @@
+/**:
+  ros__parameters:
+    # Serial
+    serial_port: /dev/ttyUSB0
+    baud_rate: 921600
+
+    # TF frame
+    frame_id: radar_link
+
+    # Radar control
+    radar_enabled: true
+    detection_level: 15         # 0-15, higher = less sensitive + longer range
+    publish_rate: 10.0          # Hz
+    auto_standby: true          # Sleep when no subscribers
+
+    # Motion detection (unit: cm)
+    mot_det_max_range: 5000     # Max range for motion detection
+    mot_det_min_range: 50       # Min range (targets closer than this ignored)
+    mot_det_sensitivity: 5      # 0-10, lower = more sensitive
+
+    # Micro-motion detection (unit: cm)
+    micro_det_max_range: 3000
+    micro_det_min_range: 50
+    micro_det_sensitivity: 5
+
+    # Breath detection (unit: cm)
+    bhr_det_max_range: 2000
+    bhr_det_min_range: 50
+    bhr_det_sensitivity: 5
