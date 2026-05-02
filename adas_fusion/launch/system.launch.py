@@ -80,6 +80,11 @@ def generate_launch_description():
         DeclareLaunchArgument('max_linear_vel', default_value='0.3'),
         DeclareLaunchArgument('max_angular_vel', default_value='0.5'),
 
+        DeclareLaunchArgument('enable_joystick', default_value='true',
+                              description='Enable joystick gamepad control'),
+        DeclareLaunchArgument('cooldown_seconds', default_value='3.0',
+                              description='Emergency recovery cooldown (seconds)'),
+
         # ==================================================================
         # 1. 传感器驱动
         # ==================================================================
@@ -114,6 +119,8 @@ def generate_launch_description():
                 'ttc_emergency': LaunchConfiguration('ttc_emergency'),
                 'max_linear_vel': LaunchConfiguration('max_linear_vel'),
                 'max_angular_vel': LaunchConfiguration('max_angular_vel'),
+                'enable_joystick': LaunchConfiguration('enable_joystick'),
+                'cooldown_seconds': LaunchConfiguration('cooldown_seconds'),
             }.items(),
         ),
 

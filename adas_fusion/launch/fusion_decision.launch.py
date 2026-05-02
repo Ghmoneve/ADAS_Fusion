@@ -7,12 +7,14 @@ fusion_decision.launch.py -- 启动适配器 + 融合 + 决策 + 串口桥接
   depthai SpatialDetectionArray → detection_adapter → /detections ──┐
   mmw RadarTargetArray          → radar_adapter      → /radar_objects ┤
   rplidar LaserScan              → (直接)            → /scan ────────┤
+  Joystick                       → /joy ─────────────────────────────┤
                                                                      ↓
                                                                 fusion_node
                                                                      ↓
                                                               /tracked_objects
                                                                      ↓
                                                                decision_node
+                                                              (joystick + 紧急接管)
                                                                      ↓
                                                                  /cmd_vel
                                                                      ↓
@@ -22,7 +24,7 @@ fusion_decision.launch.py -- 启动适配器 + 融合 + 决策 + 串口桥接
 
 用法:
   ros2 launch adas_fusion fusion_decision.launch.py
-  ros2 launch adas_fusion fusion_decision.launch.py max_linear_vel:=0.5
+  ros2 launch adas_fusion fusion_decision.launch.py enable_joystick:=true
   ros2 launch adas_fusion fusion_decision.launch.py serial_port:=/dev/ttyTHS2
 """
 
@@ -56,6 +58,10 @@ def generate_launch_description():
     cmd_vel_topic = LaunchConfiguration(
         'cmd_vel_topic', default='/cmd_vel')
 
+    # ---- 手柄参数 ----
+    enable_joy = LaunchConfiguration('enable_joystick', default='true')
+    joy_topic = LaunchConfiguration('joy_topic', default='/joy')
+
     # ---- 串口桥接参数 ----
     serial_port = LaunchConfiguration(
         'serial_port', default='/dev/ttyTHS2')
@@ -76,9 +82,25 @@ def generate_launch_description():
         DeclareLaunchArgument('tracked_topic',
                               default_value='/tracked_objects'),
         DeclareLaunchArgument('cmd_vel_topic', default_value='/cmd_vel'),
+        DeclareLaunchArgument('enable_joystick', default_value='true',
+                              description='Enable joystick control'),
+        DeclareLaunchArgument('joy_topic', default_value='/joy'),
         DeclareLaunchArgument('serial_port', default_value='/dev/ttyTHS2',
                               description='Jetson UART device for STM32'),
         DeclareLaunchArgument('serial_baud', default_value='115200'),
+
+        # ---- 手柄驱动 (标准 ROS 2 joy 包) ----
+        Node(
+            package='joy',
+            executable='joy_node',
+            name='joy_node',
+            output='screen',
+            parameters=[{
+                'dev': '/dev/input/js0',
+                'deadzone': 0.1,
+                'autorepeat_rate': 20.0,
+            }],
+        ),
 
         # ---- 视觉适配器 ----
         Node(
@@ -118,7 +140,7 @@ def generate_launch_description():
             }],
         ),
 
-        # ---- 决策节点 ----
+        # ---- 决策节点 (手柄 + 紧急接管) ----
         Node(
             package='adas_fusion',
             executable='decision_node',
@@ -127,6 +149,8 @@ def generate_launch_description():
             parameters=[params_file, {
                 'tracked_objects_topic': tracked_topic,
                 'cmd_vel_topic': cmd_vel_topic,
+                'joy_topic': joy_topic,
+                'enable_joystick': enable_joy,
             }],
         ),
 
