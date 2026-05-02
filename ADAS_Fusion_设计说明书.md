@@ -2,7 +2,8 @@
 
 > **平台**: NVIDIA Jetson ORIN NX (16GB) + Ubuntu 22.04 + ROS 2 Humble + JetPack 6.x
 > **硬件**: OAK-D PRO 深度相机 / RPLIDAR A1 激光雷达 / MS60-3015S80M4 毫米波雷达 / STM32F407 底盘控制器
-> **版本**: v1.0 | **作者**: Moneve | **日期**: 2026-04-28
+> **版本**: v2.0 | **作者**: Moneve | **日期**: 2026-05-02
+> **变更**: 采用最优融合理论 (BLUE), 传感器方差噪声模型, 手柄控制 + 紧急接管架构
 
 ---
 
@@ -37,6 +38,7 @@
 │  USB 3.0 ←── OAK-D PRO (RGB + Stereo Depth + YOLO)      │
 │  USB 2.0 ←── RPLIDAR A1 (LaserScan)                     │
 │  USB 2.0 ←── CH340 ←── MS60-3015S80M4 (mmWave Radar)    │
+│  USB 2.0 ←── Gamepad/Joystick (手柄控制)                  │
 │  UART ←───── STM32F407VGT6 (Chassis Controller)          │
 │                  ├── Motor MG513P30_12V (PWM)            │
 │                  ├── Servo (PWM)                         │
@@ -65,6 +67,7 @@
 │                                                               │
 │  depthai-ros ──→ SpatialDetectionArray                         │
 │  rplidar_ros ──→ LaserScan                                    │
+│  joy_node     ──→ /joy (sensor_msgs/Joy)                     │
 │  mmw_radar    ──→ RadarTargetArray (polar)                    │
 └──────────────────────┬───────────────────────────────────────┘
                        │
@@ -85,9 +88,14 @@
 └──────────────────────┬───────────────────────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────────────────────┐
-│                  DECISION NODE                                │
-│                                                               │
-│  TTC 计算 → 风险评估 → 分级决策 (SAFE/WARNING/SLOWDOWN/STOP) │
+│  joy_node ──→ /joy ─────────────────────────────────┐         │
+│                  DECISION NODE                       │         │
+│                                               │               │
+│  手柄直通 ←─── SAFE/WARNING ─── TTC 计算 ←── 跟踪目标 │         │
+│      │                                          │               │
+│  紧急接管 ←─── SLOWDOWN/EMERGENCY ─── 避障 cmd_vel    │         │
+│      │                                          │               │
+│  (3s 冷却后归还手柄)                                    │         │
 │                                                               │
 │  输出: /cmd_vel (Twist)                                       │
 └──────────────────────┬───────────────────────────────────────┘
@@ -109,7 +117,7 @@
 | `detection_adapter` | adas_fusion | depthai SpatialDetectionArray → Detection2DArray |
 | `radar_adapter` | adas_fusion | mmWave 极坐标 → 笛卡尔坐标 + 速度分解 |
 | `fusion_node` | adas_fusion | 多传感器自适应融合 + Kalman 跟踪 |
-| `decision_node` | adas_fusion | TTC 分级避障决策 + 绕行搜索 |
+| `decision_node` | adas_fusion | 手柄控制 + TTC 分级避障决策 + 紧急接管 + 绕行搜索 |
 | `serial_bridge` | adas_fusion | /cmd_vel → STM32 UART 串口协议 |
 
 ---
@@ -269,34 +277,42 @@ FOR EACH cluster:
     → 最近邻匹配: argmin(D_M^2)
 ```
 
-#### 5.1.5 自适应贝叶斯融合 (核心创新)
+#### 5.1.5 最优线性融合 (BLUE, Theorem 5.1)
 
 ```
-贝叶斯模型: P(X | Z) ∝ P(Z | X) * P(X)
+传感器噪声模型 (Algorithm.md §5.5.1):
+  视觉: σ²_cam = (σ²_c0 / conf) * exp(d² / (2*σ_c²))
+  LiDAR: σ²_lidar = σ²_l0 * (N_ref / |C|)
+  雷达: σ²_radar = σ²_r0 / (conf * (1 + α*|v_radial|/v₀))
 
-权重计算:
-  w_cam   = base * confidence * exp(-d² / 2σ²)          # 越远越不可靠
-  w_lidar = base * cluster_quality * exp(-d² / 2σ²)     # 点数反映质量
-  w_radar = base * confidence * (1 + |v_radial|/10)      # 速度是优势
-  归一化: w_i /= Σw
+最优融合权重 (精度加权, Theorem 5.1):
+  λ_i = 1/σ²_i  (精度/information)
+  w_i = λ_i / Σ λ_j
+  z_fused = Σ w_i * z_i
 
-加权融合:
-  X_fused = Σ w_i * Z_i
-  X_posterior = α * X_fused + (1-α) * X_prior  (α = mean(confidences))
+融合后方差:
+  σ²_fused = 1 / Σ λ_i
+  R_fused = σ²_fused * I₂
+
+该权重在线性无偏估计类中达到最小方差 (MVUE)，也是高斯假设下的 MLE。
+先验-后验平滑步骤已移除 — 卡尔曼更新自动覆盖该功能 (§5.5.4)。
 ```
 
-#### 5.1.6 Kalman Filter (恒定速度模型)
+#### 5.1.6 Kalman Filter (DWNA 模型, §5.6)
 
 ```
 状态: x = [px, py, vx, vy]^T
 F = [[1,0,dt,0],[0,1,0,dt],[0,0,1,0],[0,0,0,1]]
 H = [[1,0,0,0],[0,1,0,0]]
-Q = q * G*G^T  where G = [[dt²/2,0],[0,dt²/2],[dt,0],[0,dt]]
-R = r * I₂
+Q = q * [[dt⁴/4,0,dt³/2,0],
+         [0,dt⁴/4,0,dt³/2],
+         [dt³/2,0,dt²,0],
+         [0,dt³/2,0,dt²]]       (DWNA 离散白噪声加速度)
+R_fused = σ²_fused * I₂          (由融合精度实时计算)
 
 预测: x_pred = F*x, P_pred = F*P*F^T + Q
-更新: K = P_pred*H^T*(H*P_pred*H^T+R)^{-1}
-      x_new = x_pred + K*(z - H*x_pred)
+更新: K = P_pred*H^T*(H*P_pred*H^T + R_fused)^{-1}
+      x_new = x_pred + K*(z_fused - H*x_pred)
       P_new = (I-K*H)*P_pred
 ```
 
@@ -324,13 +340,14 @@ ELSE:             TTC = ∞ (远离, 无风险)
 
 #### 5.2.2 分级决策
 
-| TTC 范围 | 风险等级 | 行为 |
-|----------|---------|------|
-| TTC > 5.0 s | SAFE | v = v_desired, ω = ω_desired |
-| 3.0 < TTC ≤ 5.0 | WARNING | v = v_desired * 0.7 |
-| 1.0 < TTC ≤ 3.0 | SLOWDOWN | v = v_desired * 0.5 + 尝试绕行 |
-| TTC ≤ 1.0 | STOP | v = 0, ω = 0 (紧急停车) |
-| dist < 0.3 m | STOP | 无条件强制停车 |
+| TTC 范围 | 风险等级 | 行为 | 控制权 |
+|----------|---------|------|--------|
+| TTC > 5.0 s | SAFE | joystick 直通 | 手柄 |
+| 3.0 < TTC ≤ 5.0 | WARNING | joystick 限速 ×0.7 | 手柄 (限速) |
+| 1.0 < TTC ≤ 3.0 | SLOWDOWN | joystick 限速 ×0.5 + 绕行 | 半接管 |
+| TTC ≤ 1.0 | EMERGENCY | v=0, ω=0, 接管控制权 | 紧急接管 |
+| dist < 0.3 m | EMERGENCY | 无条件强制停车, 接管 | 紧急接管 |
+| 紧急解除后 3s | RECOVERY | 缓慢限速, 冷却后归还手柄 | 冷却过渡 |
 
 #### 5.2.3 绕行方向搜索
 
@@ -447,13 +464,26 @@ ros2 launch adas_fusion fusion_decision.launch.py
 | `delete_threshold` | 5 | 删除丢失目标所需帧数 |
 | `max_tracks` | 20 | 最大跟踪数 |
 | `dt` | 0.1 s | KF 时间步长 |
-| `process_noise_q` | 0.5 | 过程噪声 |
-| `measurement_noise_r` | 0.1 | 观测噪声 |
-| `camera_weight` | 0.35 | 视觉先验权重 |
-| `lidar_weight` | 0.35 | LiDAR 先验权重 |
-| `radar_weight` | 0.30 | 雷达先验权重 |
+| `process_noise_q` | 0.5 | 过程噪声系数 (DWNA) |
+| `sigma_cam_0` | 0.05 m | 相机基准标准差 |
+| `sigma_cam_scale` | 5.0 m | 相机距离衰减尺度 |
+| `sigma_lidar_0` | 0.03 m | LiDAR 基准标准差 |
+| `sigma_radar_0` | 0.2 m | 雷达基准标准差 |
+| `radar_vel_alpha` | 0.5 | 雷达速度增益 |
+| `radar_vel_ref` | 10.0 m/s | 雷达参考速度 |
 
-### 8.2 决策参数
+### 8.2 手柄控制参数 (v2.0 新增)
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `enable_joystick` | true | 启用手柄控制 |
+| `cooldown_seconds` | 3.0 s | 紧急恢复冷却时间 |
+| `joy_topic` | `/joy` | 手柄输入话题 |
+| `joy_axis_linear` | 1 | 线速度轴 (左摇杆上下) |
+| `joy_axis_angular` | 3 | 角速度轴 (右摇杆左右) |
+| `joy_deadzone` | 0.1 | 摇杆死区 |
+
+### 8.3 决策参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
@@ -494,6 +524,8 @@ Layer 6: 串口断连 → 自动重连 + 停车保护
 2. LiDAR 聚类使用简单欧氏聚类, 复杂场景可用 DBSCAN
 3. 绕行仅做方向选择, 完整路径规划应集成 Nav2
 4. 可加入加速度 ramp 避免急加速
+5. 手柄控制依赖标准 ROS 2 `joy` 包, 需确保 `/dev/input/js0` 可读
+6. 传感器噪声模型基准参数 (σ_c0, σ_l0, σ_r0) 建议通过标定实验校准
 
 ---
 
