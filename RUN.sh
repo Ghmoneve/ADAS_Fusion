@@ -7,6 +7,7 @@
 #   ./RUN.sh build        → 仅编译
 #   ./RUN.sh start        → 仅启动 (基础模式)
 #   ./RUN.sh advanced     → 编译 + 高级参数启动 (交互式菜单)
+#   ./RUN.sh camera       → 编译 (含 depthai 相机驱动, 需 Jetson + libdepthai)
 #   ./RUN.sh clean        → 清理编译产物
 #   ./RUN.sh deps         → 安装系统依赖
 #==============================================================================
@@ -88,19 +89,45 @@ build_all() {
 
     source install/setup.bash 2>/dev/null || true
 
-    step "Step 3/3: Attempt sensor driver builds (optional)"
-    colcon build --symlink-install \
+    step "Step 3/3: Build LiDAR driver"
+    # rplidar_ros: 无额外依赖, 可在 VM 上构建
+    if colcon build --symlink-install \
         --packages-select rplidar_ros \
-        --event-handlers console_direct+ 2>/dev/null || \
-        warn "rplidar_ros build skipped (requires sensor SDK)"
-
-    colcon build --symlink-install \
-        --packages-select depthai_ros_driver \
-        --event-handlers console_direct+ 2>/dev/null || \
-        warn "depthai_ros_driver build skipped (requires libdepthai)"
+        --event-handlers console_direct+ 2>/dev/null; then
+        info "rplidar_ros built successfully"
+    else
+        warn "rplidar_ros build skipped (check sllidar_ros2 SDK)"
+    fi
 
     source install/setup.bash 2>/dev/null || true
     info "Build complete"
+    echo ""
+    info "NOTE: depthai_ros_driver NOT built — requires Jetson + libdepthai + OAK-D"
+    info "      To build with camera support: ./RUN.sh camera"
+}
+
+# ---- 相机驱动构建 (仅 Jetson 硬件) ----
+build_camera() {
+    check_ros2 || return 1
+
+    step "Building depthai camera driver (requires libdepthai + OAK-D hardware)"
+
+    if ! dpkg -l libdepthai-dev 2>/dev/null | grep -q '^ii'; then
+        err "libdepthai-dev not installed."
+        err "Install: sudo apt install libdepthai-dev"
+        err "Or follow: https://docs.luxonis.com/software/depthai/installation/"
+        return 1
+    fi
+
+    colcon build --symlink-install \
+        --packages-select depthai_ros_driver \
+        --event-handlers console_direct+ || {
+        err "depthai_ros_driver build failed"
+        return 1
+    }
+
+    source install/setup.bash 2>/dev/null || true
+    info "Camera driver built — use enable_camera:=true when launching"
 }
 
 # ---- 基础启动 ----
@@ -223,7 +250,8 @@ show_menu() {
     echo "  ADAS Fusion — Build & Run Script"
     echo "============================================"
     echo ""
-    echo "  ./RUN.sh build      仅编译所有包"
+    echo "  ./RUN.sh build      仅编译 (LiDAR + Radar + Fusion)"
+    echo "  ./RUN.sh camera     编译 (含深度相机驱动, 需 Jetson)"
     echo "  ./RUN.sh start      基础启动 (默认参数)"
     echo "  ./RUN.sh advanced   高级启动 (交互式参数)"
     echo "  ./RUN.sh            编译 + 基础启动 (一键)"
@@ -239,6 +267,9 @@ main() {
     case "$cmd" in
         build)
             build_all
+            ;;
+        camera)
+            build_all && build_camera
             ;;
         start)
             basic_launch
