@@ -25,7 +25,13 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 
 from adas_fusion_msgs.msg import Detection2D, Detection2DArray
-from depthai_ros_msgs.msg import SpatialDetectionArray
+
+try:
+    from depthai_ros_msgs.msg import SpatialDetectionArray
+    HAS_DEPTHAI_MSGS = True
+except ImportError:
+    HAS_DEPTHAI_MSGS = False
+    SpatialDetectionArray = None
 
 
 class DetectionAdapter(Node):
@@ -33,6 +39,12 @@ class DetectionAdapter(Node):
 
     def __init__(self):
         super().__init__('detection_adapter')
+
+        if not HAS_DEPTHAI_MSGS:
+            self.get_logger().fatal(
+                'depthai_ros_msgs not available. '
+                'Build depthai-ros first or install depthai_ros_msgs.')
+            raise RuntimeError('depthai_ros_msgs required')
 
         # ---- 参数 ----
         self.declare_parameter('depthai_detection_topic',
