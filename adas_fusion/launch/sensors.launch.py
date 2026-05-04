@@ -16,8 +16,13 @@ sensors.launch.py -- 启动所有传感器驱动节点
 
 import os
 
-from ament_index_python.packages import get_package_share_directory, \
-    PackageNotFoundError
+from ament_index_python.packages import get_package_share_directory
+
+try:
+    from ament_index_python.packages import PackageNotFoundError
+except ImportError:
+    # 兼容旧版 ament_index_python (< 1.4.0)
+    PackageNotFoundError = LookupError
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, TimerAction
 from launch.conditions import IfCondition

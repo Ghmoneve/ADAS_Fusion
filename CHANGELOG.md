@@ -4,6 +4,14 @@
 
 ---
 
+## [v2.1.2] — 2026-05-04
+
+### Fixed
+- `system.launch.py`: 移除传给 `sensors.launch.py` 的未声明参数 `camera_model` / `nn_type` (导致 launch RuntimeError)
+- `sensors.launch.py`: `PackageNotFoundError` 导入兼容旧版 ament_index_python, 增加 `LookupError` 兜底
+
+---
+
 ## [v2.1.1] — 2026-05-04
 
 ### Fixed
