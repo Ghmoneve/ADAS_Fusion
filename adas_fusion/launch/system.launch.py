@@ -60,7 +60,8 @@ def generate_launch_description():
         # ==================================================================
         # 声明全局参数
         # ==================================================================
-        DeclareLaunchArgument('enable_camera', default_value='true'),
+        DeclareLaunchArgument('enable_camera', default_value='false',
+                              description='Enable OAK-D camera (requires libdepthai + hardware)'),
         DeclareLaunchArgument('enable_lidar', default_value='true'),
         DeclareLaunchArgument('enable_radar', default_value='true'),
 

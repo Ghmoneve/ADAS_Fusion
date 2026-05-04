@@ -115,13 +115,13 @@ basic_launch() {
     source install/setup.bash
 
     step "Launching ADAS Fusion (basic mode)"
-    info "Sensors: camera + lidar + radar (if connected)"
+    info "Sensors: lidar + radar (default); camera requires OAK-D hardware"
     info "Control: joystick (emergency override enabled)"
     info "TTC thresholds: WARN=5s SLOW=3s EMERG=1s"
+    info "To enable camera: ros2 launch adas_fusion system.launch.py enable_camera:=true"
     echo ""
 
     ros2 launch adas_fusion system.launch.py \
-        enable_camera:=true \
         enable_lidar:=true \
         enable_radar:=true \
         enable_joystick:=true
