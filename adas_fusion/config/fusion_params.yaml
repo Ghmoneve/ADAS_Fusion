@@ -61,7 +61,7 @@
     # ---- 传感器 Topic 重映射 ----
     detection_topic: "/detections"
     scan_topic: "/scan"
-    radar_topic: "/radar/targets"
+    radar_topic: "/radar_objects"
     tracked_objects_topic: "/tracked_objects"
     cmd_vel_topic: "/cmd_vel"
 
@@ -74,3 +74,9 @@
     serial_baud: 115200
     wheel_base: 0.2
     ticks_per_meter: 2000
+
+    # ---- 雷达模拟器 (无真实毫米波雷达时使用) ----
+    # 从 /tracked_objects 反算, 添加噪声后发布到 /radar_objects
+    radar_sim_noise_position: 0.2       # 距离噪声标准差 (m)
+    radar_sim_noise_velocity: 0.1       # 速度噪声标准差 (m/s)
+    radar_sim_noise_bearing_deg: 2.0    # 方位角噪声标准差 (度)

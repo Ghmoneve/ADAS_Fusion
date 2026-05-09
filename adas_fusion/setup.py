@@ -30,6 +30,7 @@ setup(
             'fusion_node = adas_fusion.fusion_node:main',
             'decision_node = adas_fusion.decision_node:main',
             'serial_bridge = adas_fusion.serial_bridge:main',
+            'radar_simulator = adas_fusion.radar_simulator:main',
         ],
     },
 )

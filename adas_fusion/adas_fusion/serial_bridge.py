@@ -41,6 +41,7 @@ serial_bridge.py -- Jetson ↔ STM32 串口桥接节点
   cmd_vel_topic: 订阅的 cmd_vel 话题 (默认 /cmd_vel)
 """
 
+import math
 import struct
 import time
 import threading
@@ -48,6 +49,7 @@ import threading
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 
 try:
     import serial
@@ -187,6 +189,17 @@ class SerialBridge(Node):
         self._last_v = 0.0
         self._last_w = 0.0
 
+        # ---- /odom 发布 ----
+        if self.get_parameter('publish_odom').value:
+            odom_topic = self.get_parameter('odom_topic').value
+            self._odom_pub = self.create_publisher(Odometry, odom_topic, 10)
+            self._odom_x = 0.0
+            self._odom_y = 0.0
+            self._odom_yaw = 0.0
+            self._last_odom_time = time.time()
+        else:
+            self._odom_pub = None
+
         # ---- /cmd_vel 订阅 ----
         cmd_topic = self.get_parameter('cmd_vel_topic').value
         self._cmd_sub = self.create_subscription(
@@ -275,7 +288,24 @@ class SerialBridge(Node):
         else:
             v, w = self._last_v, self._last_w
 
-        # 避免重复发送相同指令 (静止状态节流)
+        # 发布里程计 (cmd_vel 积分, 近似)
+        if self._odom_pub is not None:
+            dt = now - self._last_odom_time
+            self._last_odom_time = now
+            if dt > 0.0 and dt < 0.5:
+                self._odom_x += v * math.cos(self._odom_yaw) * dt
+                self._odom_y += v * math.sin(self._odom_yaw) * dt
+                self._odom_yaw += w * dt
+            odom_msg = Odometry()
+            odom_msg.header.stamp = self.get_clock().now().to_msg()
+            odom_msg.header.frame_id = self.get_parameter('odom_frame').value
+            odom_msg.child_frame_id = self.get_parameter('base_frame').value
+            odom_msg.pose.pose.position.x = self._odom_x
+            odom_msg.pose.pose.position.y = self._odom_y
+            odom_msg.twist.twist.linear.x = v
+            odom_msg.twist.twist.angular.z = w
+            self._odom_pub.publish(odom_msg)
+
         frame = Stm32Protocol.encode_velocity(v, w)
         self._send_frame(frame)
 

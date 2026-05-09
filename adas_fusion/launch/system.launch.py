@@ -85,6 +85,8 @@ def generate_launch_description():
                               description='Enable joystick gamepad control'),
         DeclareLaunchArgument('cooldown_seconds', default_value='3.0',
                               description='Emergency recovery cooldown (seconds)'),
+        DeclareLaunchArgument('enable_radar_sim', default_value='true',
+                              description='Use simulated radar (derived from fusion)'),
 
         # ==================================================================
         # 1. 传感器驱动
@@ -120,6 +122,7 @@ def generate_launch_description():
                 'max_angular_vel': LaunchConfiguration('max_angular_vel'),
                 'enable_joystick': LaunchConfiguration('enable_joystick'),
                 'cooldown_seconds': LaunchConfiguration('cooldown_seconds'),
+                'enable_radar_sim': LaunchConfiguration('enable_radar_sim'),
             }.items(),
         ),
 

@@ -71,6 +71,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Joy
+from std_msgs.msg import String
 
 from adas_fusion_msgs.msg import TrackedObjectArray
 
@@ -103,6 +104,7 @@ class DecisionNode(Node):
         self.declare_parameter('joy_axis_angular', 3)    # 右摇杆左右
         self.declare_parameter('joy_deadzone', 0.1)
         self.declare_parameter('enable_joystick', True)
+        self.declare_parameter('ttc_topic', '/decision/ttc')
 
         # ---- 订阅 ----
         joy_topic = self.get_parameter('joy_topic').value
@@ -116,6 +118,8 @@ class DecisionNode(Node):
         # ---- 发布 ----
         cmd_topic = self.get_parameter('cmd_vel_topic').value
         self._cmd_pub = self.create_publisher(Twist, cmd_topic, 10)
+        ttc_topic = self.get_parameter('ttc_topic').value
+        self._ttc_pub = self.create_publisher(String, ttc_topic, 10)
 
         # ---- 状态 ----
         self._tracks: Optional[TrackedObjectArray] = None
@@ -126,6 +130,8 @@ class DecisionNode(Node):
         self._mode = ControlMode.JOYSTICK
         self._emergency_trigger_time = 0.0    # 紧急触发时刻
         self._cooldown = self.get_parameter('cooldown_seconds').value
+
+        self._actual_v = 0.0                  # 实际发布给底盘的速度 (用于 TTC 计算)
 
         # ---- 定时器 ----
         self._timer = self.create_timer(0.05, self._decision_cycle)   # 20Hz
@@ -186,6 +192,11 @@ class DecisionNode(Node):
 
         # 风险等级判定
         risk_level, min_ttc, closest_dist = self._assess_risk()
+
+        # 发布 TTC + 风险等级 (供 data_collector 记录)
+        ttc_msg = String()
+        ttc_msg.data = f'{min_ttc:.4f},{risk_level}'
+        self._ttc_pub.publish(ttc_msg)
 
         v_max = self.get_parameter('max_linear_vel').value
         w_max = self.get_parameter('max_angular_vel').value
@@ -264,11 +275,7 @@ class DecisionNode(Node):
             return ('SAFE', float('inf'), float('inf'))
 
         robot_pos = np.array([0.0, 0.0])
-        # 使用手柄期望速度或实际速度
-        robot_vel = np.array([
-            self._joy_cmd.linear.x if self._joy_active else 0.0,
-            0.0,
-        ])
+        robot_vel = np.array([self._actual_v, 0.0])
 
         t_warn = self.get_parameter('ttc_warning').value
         t_slow = self.get_parameter('ttc_slowdown').value
@@ -312,8 +319,7 @@ class DecisionNode(Node):
         if self._tracks is None:
             return []
         robot_pos = np.array([0.0, 0.0])
-        robot_vel = np.array([
-            self._joy_cmd.linear.x if self._joy_active else 0.0, 0.0])
+        robot_vel = np.array([self._actual_v, 0.0])
         result = []
         for obj in self._tracks.objects:
             target_pos = np.array([obj.position.x, obj.position.y])
@@ -361,11 +367,13 @@ class DecisionNode(Node):
         msg.linear.x = v
         msg.angular.z = w
         self._cmd_pub.publish(msg)
+        self._actual_v = v
 
     def _publish_joy(self):
         """直通手柄指令。"""
         if self._joy_active:
             self._cmd_pub.publish(self._joy_cmd)
+            self._actual_v = self._joy_cmd.linear.x
         else:
             self._publish_cmd(0.0, 0.0)
 

@@ -32,6 +32,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -62,6 +63,18 @@ def generate_launch_description():
     enable_joy = LaunchConfiguration('enable_joystick', default='true')
     joy_topic = LaunchConfiguration('joy_topic', default='/joy')
 
+    # ---- TTC / 决策参数 (用于 system.launch.py 透传) ----
+    ttc_warning = LaunchConfiguration('ttc_warning', default='5.0')
+    ttc_slowdown = LaunchConfiguration('ttc_slowdown', default='3.0')
+    ttc_emergency = LaunchConfiguration('ttc_emergency', default='1.0')
+    max_linear_vel = LaunchConfiguration('max_linear_vel', default='0.3')
+    max_angular_vel = LaunchConfiguration('max_angular_vel', default='0.5')
+    cooldown_seconds = LaunchConfiguration('cooldown_seconds', default='3.0')
+
+    # ---- 毫米波雷达模式 ----
+    enable_radar_sim = LaunchConfiguration(
+        'enable_radar_sim', default='true')
+
     # ---- 串口桥接参数 ----
     serial_port = LaunchConfiguration(
         'serial_port', default='/dev/ttyTHS2')
@@ -88,6 +101,14 @@ def generate_launch_description():
         DeclareLaunchArgument('serial_port', default_value='/dev/ttyTHS2',
                               description='Jetson UART device for STM32'),
         DeclareLaunchArgument('serial_baud', default_value='115200'),
+        DeclareLaunchArgument('enable_radar_sim', default_value='true',
+                              description='Use simulated radar (derived from fusion). Set false for real mmWave hardware.'),
+        DeclareLaunchArgument('ttc_warning', default_value='5.0'),
+        DeclareLaunchArgument('ttc_slowdown', default_value='3.0'),
+        DeclareLaunchArgument('ttc_emergency', default_value='1.0'),
+        DeclareLaunchArgument('max_linear_vel', default_value='0.3'),
+        DeclareLaunchArgument('max_angular_vel', default_value='0.5'),
+        DeclareLaunchArgument('cooldown_seconds', default_value='3.0'),
 
         # ---- 手柄驱动 (标准 ROS 2 joy 包) ----
         Node(
@@ -114,12 +135,24 @@ def generate_launch_description():
             }],
         ),
 
-        # ---- 雷达适配器 ----
+        # ---- 毫米波雷达: 模拟器 (默认) 或真实适配器 ----
+        Node(
+            package='adas_fusion',
+            executable='radar_simulator',
+            name='radar_simulator',
+            output='screen',
+            condition=IfCondition(enable_radar_sim),
+            parameters=[params_file, {
+                'tracked_topic': tracked_topic,
+                'radar_objects_topic': radar_objects_topic,
+            }],
+        ),
         Node(
             package='adas_fusion',
             executable='radar_adapter',
             name='radar_adapter',
             output='screen',
+            condition=UnlessCondition(enable_radar_sim),
             parameters=[params_file, {
                 'radar_topic': radar_topic,
                 'publish_topic': radar_objects_topic,
@@ -151,6 +184,12 @@ def generate_launch_description():
                 'cmd_vel_topic': cmd_vel_topic,
                 'joy_topic': joy_topic,
                 'enable_joystick': enable_joy,
+                'ttc_warning': ttc_warning,
+                'ttc_slowdown': ttc_slowdown,
+                'ttc_emergency': ttc_emergency,
+                'max_linear_vel': max_linear_vel,
+                'max_angular_vel': max_angular_vel,
+                'cooldown_seconds': cooldown_seconds,
             }],
         ),
 

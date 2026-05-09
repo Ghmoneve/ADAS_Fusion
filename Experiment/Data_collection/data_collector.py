@@ -91,11 +91,15 @@ class DataCollector(Node):
         self._sub_radar = self.create_subscription(
             String, "/radar/data", self._radar_callback, reliable_qos)
 
-        # Fusion output
-        self._sub_fusion = self.create_subscription(
-            String, "/fusion/tracked_objects", self._fusion_callback, reliable_qos)
+        # Fusion output — TrackedObjectArray published by fusion_node
+        try:
+            from adas_fusion_msgs.msg import TrackedObjectArray
+            self._sub_fusion = self.create_subscription(
+                TrackedObjectArray, "/tracked_objects", self._fusion_callback, sensor_qos)
+        except ImportError:
+            self.get_logger().warn('TrackedObjectArray not available, fusion recording disabled')
 
-        # Decision output — TTC & risk level
+        # Decision output — TTC & risk level published by decision_node
         self._sub_ttc = self.create_subscription(
             String, "/decision/ttc", self._ttc_callback, reliable_qos)
 
@@ -178,22 +182,21 @@ class DataCollector(Node):
         except (ValueError, IndexError):
             self.get_logger().debug(f"Unparseable radar data: {msg.data}")
 
-    def _fusion_callback(self, msg: String):
-        """Parse fusion output (JSON-like string)."""
-        import json
-        try:
-            data = json.loads(msg.data)
-            obj = data.get("objects", [{}])[0] if data.get("objects") else {}
-            self._fusion_buffer.append({
-                "timestamp": time.time(),
-                "px": obj.get("px", 0.0),
-                "py": obj.get("py", 0.0),
-                "vx": obj.get("vx", 0.0),
-                "vy": obj.get("vy", 0.0),
-                "variance": obj.get("variance", 0.0),
-            })
-        except (json.JSONDecodeError, KeyError):
-            self.get_logger().debug(f"Unparseable fusion data: {msg.data}")
+    def _fusion_callback(self, msg):
+        """Parse fusion output (TrackedObjectArray)."""
+        if not msg.objects:
+            return
+        obj = msg.objects[0]  # primary tracked object
+        # Use position covariance diagonal as proxy for variance
+        variance = 0.0
+        self._fusion_buffer.append({
+            "timestamp": time.time(),
+            "px": obj.position.x,
+            "py": obj.position.y,
+            "vx": obj.vx,
+            "vy": obj.vy,
+            "variance": variance,
+        })
 
     def _ttc_callback(self, msg: String):
         """Parse decision output: 'ttc_value,risk_level'."""
