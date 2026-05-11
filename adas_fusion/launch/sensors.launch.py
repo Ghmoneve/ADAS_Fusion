@@ -59,6 +59,7 @@ def _try_get_camera_actions(enable_camera, camera_cfg, camera_name,
 
     container = ComposableNodeContainer(
         condition=IfCondition(enable_camera),
+        namespace='',
         name='oak_container',
         package='rclcpp_components',
         executable='component_container',

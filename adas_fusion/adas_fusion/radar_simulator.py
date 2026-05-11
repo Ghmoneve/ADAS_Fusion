@@ -80,21 +80,24 @@ class RadarSimulator(Node):
         out = RadarObjectArray()
         out.header = Header(stamp=now.to_msg(), frame_id='radar_link')
 
-        # 收集所有目标的雷达反算数据
+        # 只处理最近的目标（最危险），避免反馈回路产生幻影目标
+        if not msg.objects:
+            return
+        closest = min(msg.objects, key=lambda o: math.sqrt(o.position.x**2 + o.position.y**2))
         radar_lines = []
-        for obj in msg.objects:
+        for obj in [closest]:
             px = obj.position.x
             py = obj.position.y
             vx = obj.vx
             vy = obj.vy
 
             dist = math.sqrt(px * px + py * py)
-            if dist < 0.01 or dist > self._max_range:
+            if dist < 0.3 or dist > self._max_range:
                 continue
 
             # 加噪声
             noisy_dist = dist + np.random.normal(0.0, self._sigma_pos)
-            noisy_dist = max(0.05, noisy_dist)
+            noisy_dist = max(0.3, noisy_dist)
 
             true_bearing = math.atan2(py, px)
             noisy_bearing = true_bearing + np.random.normal(0.0, self._sigma_bearing)

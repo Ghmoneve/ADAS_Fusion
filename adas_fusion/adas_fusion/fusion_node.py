@@ -520,11 +520,11 @@ class FusionNode(Node):
     # ======================================================================
 
     def _associate(self, observations: List[Observation]
-                   ) -> Tuple[Dict[int, List[Observation]], List[Observation]]:
+                   ) -> Tuple[dict, List[Observation]]:
         if not observations:
             return {}, []
 
-        matched: Dict[int, List[Observation]] = {}
+        matched: dict = {}
         used_obs: set = set()
         active = [t for t in self._tracks
                   if t.state in ('CANDIDATE', 'CONFIRMED')]
@@ -544,7 +544,7 @@ class FusionNode(Node):
                 continue
             candidates.sort(key=lambda x: x[2])
             best_idx, best_obs, _ = candidates[0]
-            matched.setdefault(track.id, []).append(best_obs)
+            matched.setdefault(track, []).append(best_obs)
             used_obs.add(best_idx)
 
         unmatched = [obs for i, obs in enumerate(observations)

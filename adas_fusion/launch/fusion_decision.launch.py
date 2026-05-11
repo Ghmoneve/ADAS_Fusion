@@ -1,37 +1,28 @@
 #!/usr/bin/env python3
 """
-fusion_decision.launch.py -- 启动适配器 + 融合 + 决策 + 串口桥接
-=============================================================
+fusion_decision.launch.py -- 启动适配器 + 融合 + 决策 (turtlebot4 集成版)
+=======================================================================
 
-数据流:
-  depthai SpatialDetectionArray → detection_adapter → /detections ──┐
-  mmw RadarTargetArray          → radar_adapter      → /radar_objects ┤
-  rplidar LaserScan              → (直接)            → /scan ────────┤
-  Joystick                       → /joy ─────────────────────────────┤
-                                                                     ↓
-                                                                fusion_node
-                                                                     ↓
-                                                              /tracked_objects
-                                                                     ↓
-                                                               decision_node
-                                                              (joystick + 紧急接管)
-                                                                     ↓
-                                                                 /cmd_vel
-                                                                     ↓
-                                                              serial_bridge
-                                                                     ↓
-                                                           STM32 (UART)
+turtlebot4 架构:
+  手柄 -> joy_node -> /joy_raw --> decision_node -> /joy --> turtlebot4_node -> 底盘
+                                 radar_sim -> /radar_objects -+
+                                 fusion_node -> /tracked_objects -+
+
+决策模式:
+  SAFE:      透传 /joy_raw -> /joy
+  WARNING:   限速 70%
+  SLOWDOWN:  限速 50% + 绕行
+  EMERGENCY: 运动轴清零, ADAS 接管
 
 用法:
   ros2 launch adas_fusion fusion_decision.launch.py
   ros2 launch adas_fusion fusion_decision.launch.py enable_joystick:=true
-  ros2 launch adas_fusion fusion_decision.launch.py serial_port:=/dev/ttyTHS2
 """
 
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, TimerAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -43,7 +34,7 @@ def generate_launch_description():
 
     params_file = LaunchConfiguration('params_file', default=default_params)
 
-    # ---- 传感器 Topic 重映射 ----
+    # ---- Topic 重映射 ----
     depthai_det_topic = LaunchConfiguration(
         'depthai_det_topic', default='/oak/color/yolov4_Spatial_detections')
     detection_topic = LaunchConfiguration(
@@ -61,9 +52,10 @@ def generate_launch_description():
 
     # ---- 手柄参数 ----
     enable_joy = LaunchConfiguration('enable_joystick', default='true')
+    joy_raw_topic = LaunchConfiguration('joy_raw_topic', default='/joy_raw')
     joy_topic = LaunchConfiguration('joy_topic', default='/joy')
 
-    # ---- TTC / 决策参数 (用于 system.launch.py 透传) ----
+    # ---- TTC / 决策参数 ----
     ttc_warning = LaunchConfiguration('ttc_warning', default='5.0')
     ttc_slowdown = LaunchConfiguration('ttc_slowdown', default='3.0')
     ttc_emergency = LaunchConfiguration('ttc_emergency', default='1.0')
@@ -72,37 +64,29 @@ def generate_launch_description():
     cooldown_seconds = LaunchConfiguration('cooldown_seconds', default='3.0')
 
     # ---- 毫米波雷达模式 ----
-    enable_radar_sim = LaunchConfiguration(
-        'enable_radar_sim', default='true')
+    enable_radar_sim = LaunchConfiguration('enable_radar_sim', default='true')
 
     # ---- 串口桥接参数 ----
-    serial_port = LaunchConfiguration(
-        'serial_port', default='/dev/ttyTHS2')
-    serial_baud = LaunchConfiguration(
-        'serial_baud', default='115200')
+    serial_port = LaunchConfiguration('serial_port', default='/dev/ttyTHS2')
+    serial_baud = LaunchConfiguration('serial_baud', default='115200')
 
     return LaunchDescription([
 
-        DeclareLaunchArgument('params_file', default_value=default_params,
-                              description='Path to YAML params file'),
+        DeclareLaunchArgument('params_file', default_value=default_params),
         DeclareLaunchArgument('depthai_det_topic',
                               default_value='/oak/color/yolov4_Spatial_detections'),
         DeclareLaunchArgument('detection_topic', default_value='/detections'),
         DeclareLaunchArgument('radar_topic', default_value='/radar/targets'),
-        DeclareLaunchArgument('radar_objects_topic',
-                              default_value='/radar_objects'),
+        DeclareLaunchArgument('radar_objects_topic', default_value='/radar_objects'),
         DeclareLaunchArgument('scan_topic', default_value='/scan'),
-        DeclareLaunchArgument('tracked_topic',
-                              default_value='/tracked_objects'),
+        DeclareLaunchArgument('tracked_topic', default_value='/tracked_objects'),
         DeclareLaunchArgument('cmd_vel_topic', default_value='/cmd_vel'),
-        DeclareLaunchArgument('enable_joystick', default_value='true',
-                              description='Enable joystick control'),
+        DeclareLaunchArgument('enable_joystick', default_value='true'),
+        DeclareLaunchArgument('joy_raw_topic', default_value='/joy_raw'),
         DeclareLaunchArgument('joy_topic', default_value='/joy'),
-        DeclareLaunchArgument('serial_port', default_value='/dev/ttyTHS2',
-                              description='Jetson UART device for STM32'),
+        DeclareLaunchArgument('serial_port', default_value='/dev/ttyTHS2'),
         DeclareLaunchArgument('serial_baud', default_value='115200'),
-        DeclareLaunchArgument('enable_radar_sim', default_value='true',
-                              description='Use simulated radar (derived from fusion). Set false for real mmWave hardware.'),
+        DeclareLaunchArgument('enable_radar_sim', default_value='true'),
         DeclareLaunchArgument('ttc_warning', default_value='5.0'),
         DeclareLaunchArgument('ttc_slowdown', default_value='3.0'),
         DeclareLaunchArgument('ttc_emergency', default_value='1.0'),
@@ -110,7 +94,15 @@ def generate_launch_description():
         DeclareLaunchArgument('max_angular_vel', default_value='0.5'),
         DeclareLaunchArgument('cooldown_seconds', default_value='3.0'),
 
-        # ---- 手柄驱动 (标准 ROS 2 joy 包) ----
+        # ---- 停止 turtlebot4 原生 joy_linux_node (避免 /joy 冲突) ----
+        ExecuteProcess(
+            cmd=['pkill', '-f', 'joy_linux_node'],
+            name='kill_joy_linux',
+            shell=True,
+            output='screen',
+        ),
+
+        # ---- 手柄驱动 (发布到 /joy_raw) ----
         Node(
             package='joy',
             executable='joy_node',
@@ -121,6 +113,9 @@ def generate_launch_description():
                 'deadzone': 0.1,
                 'autorepeat_rate': 20.0,
             }],
+            remappings=[
+                ('/joy', '/joy_raw'),
+            ],
         ),
 
         # ---- 视觉适配器 ----
@@ -173,16 +168,17 @@ def generate_launch_description():
             }],
         ),
 
-        # ---- 决策节点 (手柄 + 紧急接管) ----
+        # ---- 决策节点 (turtlebot4: joy_raw -> TTC -> joy) ----
         Node(
             package='adas_fusion',
             executable='decision_node',
             name='decision_node',
             output='screen',
             parameters=[params_file, {
+                'joy_raw_topic': joy_raw_topic,
+                'joy_topic': joy_topic,
                 'tracked_objects_topic': tracked_topic,
                 'cmd_vel_topic': cmd_vel_topic,
-                'joy_topic': joy_topic,
                 'enable_joystick': enable_joy,
                 'ttc_warning': ttc_warning,
                 'ttc_slowdown': ttc_slowdown,
@@ -193,7 +189,7 @@ def generate_launch_description():
             }],
         ),
 
-        # ---- 串口桥接 (Jetson → STM32) ----
+        # ---- 串口桥接 (Jetson -> STM32) ----
         Node(
             package='adas_fusion',
             executable='serial_bridge',
@@ -205,4 +201,6 @@ def generate_launch_description():
                 'cmd_vel_topic': cmd_vel_topic,
             }],
         ),
+
+        LogInfo(msg='[ADAS Fusion] turtlebot4 system ready: joy_raw -> decision -> joy'),
     ])

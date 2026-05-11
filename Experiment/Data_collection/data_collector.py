@@ -106,7 +106,7 @@ class DataCollector(Node):
         # Camera
         if CV_BRIDGE_AVAILABLE:
             self._sub_camera = self.create_subscription(
-                Image, "/oak/rgb/image_raw", self._camera_callback, sensor_qos)
+                Image, "/oakd/rgb/preview/image_raw", self._camera_callback, sensor_qos)
         else:
             self.get_logger().warn("cv_bridge not available — camera keyframes disabled")
 
