@@ -1,0 +1,254 @@
+% =============================================================================
+% 第4章 自适应多传感器融合环境感知算法 —— 含参考文献标注的示例文稿
+% 格式: XeLaTeX + ctex (中文支持) + BibTeX
+% 编译: xelatex → bibtex → xelatex → xelatex
+% 说明: 用 \cite{key} 在正文中引用，所有引用条目见 references.bib
+% =============================================================================
+
+\documentclass[12pt,a4paper]{ctexart}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue]{hyperref}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry}
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+
+\title{第4章 自适应多传感器融合环境感知算法}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+% ===========================================================================
+\section{融合算法框架设计}
+% ===========================================================================
+
+本章根据第二章软件系统架构的要求，详细设计自适应多传感器融合环境感知算法
+\cite{wang2020fusion}。由于单一传感器感知均存在其固有
+缺陷，故采取多传感器融合的信息互补策略进行感知算法的设计。
+
+\subsection{多传感器时空对齐}
+
+不同传感器数据发布的频率差距较大，相机发布数据的频率为30Hz，激光雷达
+发布数据的频率为10Hz，毫米波雷达发布数据的频率为20Hz。对于这种现状，
+本设计将采取固定长度的时间窗对某一时刻的数据进行采样。
+
+由于传感器安装在机器人的不同位置，且拥有各自的独立坐标系，必须对多传感
+器坐标系进行坐标变换的操作。设每个传感器观测点坐标
+$\mathbf{p}_{\mathrm{sensor}}$ 位于其自身固有坐标系下，系统发布的静态
+坐标变换 $(R,t)$ 将这个坐标转换到统一的机器人坐标系 base\_link 下：
+\begin{equation}
+\mathbf{p}_{\mathrm{base}} =
+\mathbf{R}_{\mathrm{sensor}}^{\mathrm{base}} \cdot
+\mathbf{p}_{\mathrm{sensor}} +
+\mathbf{t}_{\mathrm{sensor}}^{\mathrm{base}}
+\end{equation}
+
+对于后面的观测协方差，同样需要进行坐标变换。设传感器坐标系下观测噪声的
+协方差为 $\mathbf{R}_{\mathrm{sensor}}$，则变换到 base\_link 下的协方差为：
+\begin{equation}
+\mathbf{R}_{\mathrm{base}} =
+\mathbf{R}_{\mathrm{sensor}}^{\mathrm{base}} \;
+\mathbf{R}_{\mathrm{sensor}} \;
+\bigl( \mathbf{R}_{\mathrm{sensor}}^{\mathrm{base}} \bigr)^{\top}
+\end{equation}
+由于该变换为线性变换，因此该传播公式严格成立
+\cite{bar2001estimation}。
+
+% ===========================================================================
+\section{多传感器数据关联}
+% ===========================================================================
+
+在多传感器融合系统中，融合节点需要同时维护对环境中多个动态目标的持续
+跟踪，而每个处理周期又会接收到来自传感器的多个异步观测。数据关联的核心
+任务是在这些已存在的跟踪目标和新的观测之间建立正确的对应关系
+\cite{li1996nn}。
+
+\subsection{传感器观测模型与跟踪目标关联}
+
+由于现实世界中的噪声，每个传感器的真实值并不能测得。设传感器
+$s \in \{\mathrm{cam}, \mathrm{lidar}, \mathrm{radar}\}$ 的观测
+$\mathbf{z}_s \in \mathbb{R}^2$ 是由真实位置叠加噪声而产生的，且噪声
+服从正态分布\cite{kalman1960,bar2001estimation}：
+\begin{equation}
+\mathbf{z}_s = \mathbf{x}_{\mathrm{true}} + \mathbf{v}_s, \quad
+\mathbf{v}_s \sim \mathcal{N}(\mathbf{0}, \mathbf{R}_s)
+\end{equation}
+其中，$\mathbf{v}_s$ 为噪声，$\mathbf{R}_s = \sigma_s^2 \mathbf{I}_2$
+为传感器的测量噪声协方差矩阵。
+
+欧氏距离假设各维度独立同分布，但实际中数据的不同维度可能相关且量纲
+不同。基于这种前提，马氏距离考虑了数据分布的协方差结构
+\cite{mahalanobis1936}：
+\begin{equation}
+D_M(\mathbf{x},\mathbf{y}) =
+\sqrt{(\mathbf{x} - \mathbf{y})^{\top}
+\mathbf{\Sigma}^{-1}(\mathbf{x} - \mathbf{y})}
+\end{equation}
+
+残差的协方差矩阵由预测过程的不确定性以及测量过程中的测量噪声两方面组成
+\cite{kalman1960}：
+\begin{equation}
+\mathbf{S}_s^{(j)} =
+\mathbf{H}\mathbf{P}_{\mathrm{pred}}^{(j)}\mathbf{H}^{\top} +
+\mathbf{R}_s
+\end{equation}
+
+对残差计算马氏距离的平方：
+\begin{equation}
+D_M^2 =
+\bigl( \mathbf{y}_s^{(j)} \bigr)^{\top}
+\bigl( \mathbf{S}_s^{(j)} \bigr)^{-1}
+\mathbf{y}_s^{(j)}
+\end{equation}
+
+由于 $\mathbf{z}_s \in \mathbb{R}^2$ 中噪声服从正态分布，残差也服从
+正态分布，进而得到残差马氏距离平方服从自由度为2的卡方分布
+\cite{casella2002statistical}：
+\begin{equation}
+D_M^2 \sim \chi^2(2)
+\end{equation}
+
+取显著性水平 $\alpha = 0.05$，查表得到 $\chi_{0.95}^2(2) = 5.991$
+\cite{casella2002statistical}。根据假设检验的基本原则，若
+$D_M^2 < 5.991$ 则接受原假设，即认为观测属于原目标，数据关联成功。
+
+\subsection{关联过程最优性}
+
+数据关联环节采用的假设检验为似然比检验
+\cite{neyman1933}。令
+$L(\mathbf{z}_s \mid H_0) = \mathcal{N}(\mathbf{z}_{\mathrm{pred}}, \mathbf{S}_s)$，
+并给出似然比：
+\begin{equation}
+\Lambda =
+\frac{L(\mathbf{z}_s \mid H_0)}
+{\sup_{H_1} L(\mathbf{z}_s \mid H_1)}
+\end{equation}
+
+根据 Neyman--Pearson 引理\cite{neyman1933}，在给定的原假设为真时却
+错误地拒绝它的概率下，似然比检验能够提供最大的检验概率。因此马氏距离
+检验在5\%显著水平下的检测率是最高的
+\cite{li1996nn,casella2002statistical}。
+
+% ===========================================================================
+\section{自适应多传感器最优线性融合}
+% ===========================================================================
+
+本节将来自视觉摄像头、激光雷达与毫米波雷达的观测数据进行融合
+\cite{sun2004fusion,li2003fusion}。首先为各传感器建立测量噪声模型，
+然后推导在线性无偏估计类中方差最小的最优融合权重\cite{aitken1935}，
+最终给出能够自适应调整权重的融合算法。
+
+\subsection{传感器测量噪声模型}
+
+对于视觉摄像头，深度估计的误差与距离的平方成正比
+\cite{chatterjee2015stereo}：
+\begin{equation}
+\sigma_{\mathrm{cam}}^2 =
+\frac{\sigma_{\mathrm{c},0}^2}{\mathrm{conf}_{\mathrm{cam}}}
+\exp\left( \frac{d^2}{2\sigma_c^2} \right)
+\end{equation}
+式表明摄像头精度 $1/\sigma^2$ 随置信度增加而提高，随距离增加而呈指数
+衰减，这与经典双目相机误差特性在远距离迅速退化的事实一致
+\cite{chatterjee2015stereo}。
+
+对于激光雷达，聚类中心的协方差根据中心极限定理给出
+\cite{casella2002statistical}，点云越密集则观测噪声
+越小：
+\begin{equation}
+\sigma_{\mathrm{lidar}}^2 =
+\sigma_{\mathrm{lidar},0}^2 \cdot \frac{N_{\mathrm{ref}}}{|C|}
+\end{equation}
+
+对于毫米波雷达，其精度与数据的置信度以及多普勒径向速度有关
+\cite{jacobs2023radar}，径向速度越大则动态目标回波越强，相应的定位越
+准\cite{jacobs2023radar}：
+\begin{equation}
+\sigma_{\mathrm{radar}}^2 =
+\frac{\sigma_{\mathrm{r},0}^2}
+{\mathrm{conf}_{\mathrm{radar}}(1 + \alpha |v_{\mathrm{radial}}|/v_0)}
+\end{equation}
+
+\subsection{自适应融合权重与观测协方差计算}
+
+设 $\mathbf{z}_1, \dots, \mathbf{z}_m$ 是 $m$ 个来自不同传感器的独立
+观测，且满足 $\mathbb{E}[\mathbf{z}_i] = \mathbf{x}$，
+$\mathrm{Cov}(\mathbf{z}_i) = \sigma_i^2 \mathbf{I}_2$。定义线性融合估计
+$\hat{\mathbf{x}} = \sum_{i=1}^{m} w_i \mathbf{z}_i$，其中
+$\sum w_i = 1$。
+
+在最小均方误差意义下的最优权重为精度加权形式
+\cite{aitken1935,li2003fusion}：
+\begin{equation}
+w_i^{*} =
+\frac{1/\sigma_i^2}{\sum_{j=1}^{m} 1/\sigma_j^2},
+\qquad i = 1,\dots,m
+\end{equation}
+
+与之对应的融合后方差为
+\cite{aitken1935,li2003fusion,sun2004fusion}：
+\begin{equation}
+\sigma_{\mathrm{fused}}^2 =
+\frac{1}{\sum_{i=1}^{m} 1/\sigma_i^2}
+\end{equation}
+
+该权重设计严格使得融合位置在给定的传感器噪声模型下达到最小方差，从而
+为最优解\cite{aitken1935,li2003fusion}。当某一传感器失效（如遮挡）时，
+其输出置信度接近零，方差趋于无穷，自动丧失对融合的贡献，保证了融合
+结果的相对准确性。
+
+% ===========================================================================
+\section{基于 Kalman 滤波的状态估计}
+% ===========================================================================
+
+本节阐述 Kalman 滤波\cite{kalman1960}作为多传感器融合后状态估计器的
+作用。仅依靠运动模型预测，误差会随时间累积，而单纯的观测则受瞬时噪声
+影响。更新步骤通过卡尔曼增益自适应地融合预测先验与多传感器融合观测，
+在数学上保证状态估计是在线性无偏类中方差最小的\cite{kalman1960}。
+
+在恒定速度假设下的过程模型为\cite{bar2001estimation}：
+\begin{equation}
+\mathbf{x}_{k+1} = \mathbf{F}\mathbf{x}_k + \mathbf{w}_k,
+\quad \mathbf{w}_k \sim \mathcal{N}(0, \mathbf{Q})
+\end{equation}
+其中状态转移矩阵和过程噪声协方差矩阵采用离散白噪声加速度（DWNA）模型
+\cite{bar2001estimation}。
+
+预测完成后对其先验进行更新，这一流程通过Kalman增益实现预测先验与多传
+感器融合观测之间的最优融合\cite{kalman1960,bar2001estimation}：
+\begin{align}
+\mathbf{y}     &= \mathbf{z}_{\mathrm{fused}} - \mathbf{H}\mathbf{x}_{\mathrm{pred}} \\
+\mathbf{S}     &= \mathbf{H}\mathbf{P}_{\mathrm{pred}}\mathbf{H}^{\top} + \mathbf{R}_{\mathrm{fused}} \\
+\mathbf{K}     &= \mathbf{P}_{\mathrm{pred}}\mathbf{H}^{\top}\mathbf{S}^{-1} \\
+\mathbf{x}_{\mathrm{new}} &= \mathbf{x}_{\mathrm{pred}} + \mathbf{K}\mathbf{y} \\
+\mathbf{P}_{\mathrm{new}} &= (\mathbf{I} - \mathbf{K}\mathbf{H})\mathbf{P}_{\mathrm{pred}}
+\end{align}
+
+% ===========================================================================
+\section{融合算法全局最优性证明}
+% ===========================================================================
+
+对于本设计中的问题，考虑动态目标进行平面运动，感知系统通过传感器观测、
+数据关联、多传感器融合、卡尔曼滤波四个步骤对其状态进行预测估计
+\cite{bar2001estimation}。
+
+在给定的五条假设下——包括目标运动服从线性恒定速度模型、各传感器噪声
+为独立零均值高斯白噪声、数据关联完全正确等——本算法输出的状态估计
+$\mathbf{x}_{\mathrm{new}}$ 是真实状态 $\mathbf{x}_k$ 的最小方差无偏
+估计\cite{aitken1935}，且为最大后验估计\cite{casella2002statistical}。
+
+数据关联环节的最优性来源于 Neyman--Pearson 最优检验定理
+\cite{neyman1933}；数据融合环节的最优性来源于最小方差无偏估计
+\cite{aitken1935,li2003fusion}；数据更新环节的最优性来源于 Kalman 滤波
+在线性高斯系统下的性质——给出状态的条件均值即最小均方误差估计
+\cite{kalman1960,bar2001estimation}。
+
+在假设条件下，使用本章所陈述的算法，算法局部步骤以及整体均达到了最优
+\cite{kalman1960,neyman1933,aitken1935,bar2001estimation}。
+
+% ===========================================================================
+%                              参考文献
+% ===========================================================================
+\bibliographystyle{unsrt}
+\bibliography{references}
+
+\end{document}
