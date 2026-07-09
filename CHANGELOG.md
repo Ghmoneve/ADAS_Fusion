@@ -4,6 +4,22 @@
 
 ---
 
+## [v2.1.3] — 2026-05-04
+
+### Fixed
+- `system.launch.py`: 移除未使用的 `camera_model` / `nn_type` 声明 (已不再转发给 sensors.launch.py)
+- `fusion_decision.launch.py`: 移除 `joy_raw_topic` 参数 (decision_node 未声明)
+- `decision_node.py`: `joy_axis_angular` 默认值修正为 3 (与 fusion_params.yaml 一致)
+- `Fusion_trans/msg/`: 补充 `TrackedObjectArray.msg`
+
+### Added
+- `Fusion_trans/`: 传感器无关的最优融合引擎 (零 ROS 依赖)
+  - fusion_core/: FusionEngine, KalmanFilter, SensorPresets, association, track_manager
+  - example/example_fusion.py: 最小可用示例
+  - README.md: 431行开发级文档 (架构/API/噪声模型推导/集成指南)
+
+---
+
 ## [v2.1.2] — 2026-05-04
 
 ### Fixed

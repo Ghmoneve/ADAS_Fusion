@@ -24,8 +24,7 @@ system.launch.py -- 完整系统启动文件 (Jetson ORIN NX)
   serial_port:     STM32 串口 (default: /dev/ttyTHS2, Jetson USART3)
 
   -- 相机 --
-  camera_model:    OAK-D-PRO / OAK-D / OAK-D-LITE
-  nn_type:         spatial (YOLO+双目深度) / rgb / none
+  camera_name:     相机名 (决定 depthai topic 前缀, default: oak)
   camera_name:     相机名 (决定 depthai topic 前缀, default: oak)
 
   -- 串口桥接 --
@@ -70,9 +69,7 @@ def generate_launch_description():
         DeclareLaunchArgument('serial_port', default_value='/dev/ttyTHS2'),
         DeclareLaunchArgument('serial_baud', default_value='115200'),
 
-        DeclareLaunchArgument('camera_model', default_value='OAK-D-PRO'),
         DeclareLaunchArgument('camera_name', default_value='oak'),
-        DeclareLaunchArgument('nn_type', default_value='spatial'),
 
         DeclareLaunchArgument('ttc_warning', default_value='5.0'),
         DeclareLaunchArgument('ttc_slowdown', default_value='3.0'),

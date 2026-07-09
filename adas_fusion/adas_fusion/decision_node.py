@@ -53,7 +53,7 @@ class DecisionNode(Node):
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('ttc_topic', '/decision/ttc')
         self.declare_parameter('joy_axis_linear', 1)
-        self.declare_parameter('joy_axis_angular', 0)
+        self.declare_parameter('joy_axis_angular', 3)
         self.declare_parameter('joy_deadzone', 0.1)
         self.declare_parameter('enable_joystick', True)
 

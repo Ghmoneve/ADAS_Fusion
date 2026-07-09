@@ -52,7 +52,6 @@ def generate_launch_description():
 
     # ---- 手柄参数 ----
     enable_joy = LaunchConfiguration('enable_joystick', default='true')
-    joy_raw_topic = LaunchConfiguration('joy_raw_topic', default='/joy_raw')
     joy_topic = LaunchConfiguration('joy_topic', default='/joy')
 
     # ---- TTC / 决策参数 ----
@@ -82,7 +81,6 @@ def generate_launch_description():
         DeclareLaunchArgument('tracked_topic', default_value='/tracked_objects'),
         DeclareLaunchArgument('cmd_vel_topic', default_value='/cmd_vel'),
         DeclareLaunchArgument('enable_joystick', default_value='true'),
-        DeclareLaunchArgument('joy_raw_topic', default_value='/joy_raw'),
         DeclareLaunchArgument('joy_topic', default_value='/joy'),
         DeclareLaunchArgument('serial_port', default_value='/dev/ttyTHS2'),
         DeclareLaunchArgument('serial_baud', default_value='115200'),
@@ -175,7 +173,6 @@ def generate_launch_description():
             name='decision_node',
             output='screen',
             parameters=[params_file, {
-                'joy_raw_topic': joy_raw_topic,
                 'joy_topic': joy_topic,
                 'tracked_objects_topic': tracked_topic,
                 'cmd_vel_topic': cmd_vel_topic,
